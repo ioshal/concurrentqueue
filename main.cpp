@@ -2,46 +2,40 @@
 #include <thread>
 #include <vector>
 #include <functional>
+#include <chrono>
 
 #include "tsqueue.h"
 
 using namespace std;
 
 int main() {
-    tsqueue<int> q;
+    tsqueue<int> q({1, 2, 3, 4, 5});
+
     vector<thread> workers;
-    const int numOfWorkers = 10;
+    const int numOfWorkers = 5;
+    const int numOfOperations = 100000;
 
     for (int i = 0; i < numOfWorkers; i++) {
         workers.push_back(thread([&]() {
-            for (int j = 0; j < 10; j++) {
+            for (int j = 0; j < numOfOperations; j++) {
                 q.push(j);
             }
 
-            q.pop();
             q.push(1337);
         }));
     }
 
-    thread th1([&](){
-        q.pop();
-        q.pop();
-        q.pop();
-    });
+    for (int i = 0; i < numOfWorkers; i++) {
+        workers.push_back(thread([&]() {
+            q.tryPop();
+
+            for (int j = 0; j < numOfOperations; j++) {
+                q.tryPopFor(chrono::seconds(2));
+            }
+        }));
+    }
 
     for_each(workers.begin(), workers.end(), mem_fn(&thread::join));
-
-    th1.join();
-
-    cout << q.size();
-
-//    while (!q.empty()) {
-//        int el;
-//
-//        q.pop(el);
-//
-//        cout << "[ " << el << " ] ";
-//    }
 
     return 0;
 }

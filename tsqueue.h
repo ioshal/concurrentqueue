@@ -8,15 +8,29 @@
 #include <queue>
 #include <mutex>
 #include <iostream>
+#include <chrono>
+#include <condition_variable>
+
+enum class OpStatus {
+    OK,
+    EMPTY
+};
 
 template<class Element>
 class tsqueue final {
 public:
+    tsqueue() = default;
+    tsqueue(std::initializer_list<Element>);
+
     void push(const Element &);
     void push(Element &&);
 
     void pop(Element&);
     void pop();
+
+    OpStatus tryPop();
+
+    void tryPopFor(std::chrono::seconds);
 
     [[nodiscard]] size_t size();
     [[nodiscard]] bool empty();
@@ -72,12 +86,6 @@ void tsqueue<Element>::pop(Element& popped) {
     _queue.pop();
 }
 
-template<class Element>
-bool tsqueue<Element>::empty() {
-    std::scoped_lock<std::mutex> lock(_mutex);
-
-    return _queue.empty();
-}
 
 template<class Element>
 void tsqueue<Element>::pop() {
@@ -87,5 +95,43 @@ void tsqueue<Element>::pop() {
 
     _queue.pop();
 }
+
+template<class Element>
+void tsqueue<Element>::tryPopFor(std::chrono::seconds seconds) {
+    std::unique_lock<std::mutex> lock(_mutex);
+
+    if (!_queueEmptyCV.wait_for(lock, seconds, [this](){ return !_queue.empty(); })) {
+        return;
+    }
+
+    _queue.pop();
+}
+
+template<class Element>
+OpStatus tsqueue<Element>::tryPop() {
+    std::unique_lock<std::mutex> lock(_mutex);
+
+    if (_queue.empty()) {
+        return OpStatus::EMPTY;
+    }
+    _queue.pop();
+
+    return OpStatus::OK;
+}
+
+template<class Element>
+bool tsqueue<Element>::empty() {
+    std::scoped_lock<std::mutex> lock(_mutex);
+
+    return _queue.empty();
+}
+
+template<class Element>
+tsqueue<Element>::tsqueue(std::initializer_list<Element> elements) {
+    for (const auto& el : elements) {
+        _queue.push(el);
+    }
+}
+
 
 #endif //THREADSAFEQUEUE_TSQUEUE_H
